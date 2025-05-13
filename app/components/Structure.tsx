@@ -1,84 +1,100 @@
+// components/Structure.tsx
 import { memo, useState, useEffect, useCallback, useRef } from 'react';
 import { Assets, Rectangle, Texture, FederatedPointerEvent } from 'pixi.js';
 import { useApplication } from '@pixi/react';
 import { useDragStore } from '../store/useDragStore';
-
-const TILE_WIDTH = 218;
-const TILE_HEIGHT = 120;
-const STRUCTURE_SIZE = 256;
-const STRUCTURE_Y_OFFSET = 30;
-
-const isoX = (x: number, y: number) => (x - y) * (TILE_WIDTH / 2);
-const isoY = (x: number, y: number) => (x + y) * (TILE_HEIGHT / 2);
-const uniso = (x: number, y: number) => {
-    const isoHalfW = TILE_WIDTH / 2;
-    const isoHalfH = TILE_HEIGHT / 2;
-    const gridY = (y / isoHalfH - x / isoHalfW) / 2;
-    const gridX = (y / isoHalfH + x / isoHalfW) / 2;
-    return [Math.round(gridX), Math.round(gridY)];
-};
+import { useGameStore } from '../store/useGameStore';
 
 export interface StructureProps {
-    x: number;
-    y: number;
+    tileX: number; // original grid X
+    tileY: number; // original grid Y
+    x: number; // pixel
+    y: number; // pixel
     structureId: number;
     scale?: number;
     onRemove: () => void;
 }
 
-const Structure = memo(({ x, y, structureId, scale = 1, onRemove }: StructureProps) => {
-    const { app } = useApplication();
-    const spriteX = (structureId % 10) * STRUCTURE_SIZE;
-    const spriteY = Math.floor(structureId / 10) * STRUCTURE_SIZE;
+const TILE_WIDTH = 218;
+const TILE_HEIGHT = 120;
+const STRUCTURE_Y_OFFSET = 30;
+const STRUCTURE_SIZE = 256;
 
+const isoX = (x: number, y: number) => (x - y) * (TILE_WIDTH / 2);
+const isoY = (x: number, y: number) => (x + y) * (TILE_HEIGHT / 2);
+const uniso = (x: number, y: number) => {
+    const halfW = TILE_WIDTH / 2;
+    const halfH = TILE_HEIGHT / 2;
+    const gridY = (y / halfH - x / halfW) / 2;
+    const gridX = (y / halfH + x / halfW) / 2;
+    return [Math.round(gridX), Math.round(gridY)] as [number, number];
+};
+
+const Structure = memo(({
+                            tileX,
+                            tileY,
+                            x: initialX,
+                            y: initialY,
+                            structureId,
+                            scale = 1,
+                        }: StructureProps) => {
+    const { app } = useApplication();
     const [texture, setTexture] = useState(Texture.EMPTY);
-    const [position, setPosition] = useState({ x, y });
+    const [pos, setPos] = useState({ x: initialX, y: initialY });
 
     const dragging = useRef(false);
     const offsetRef = useRef({ x: 0, y: 0 });
     const scaleFactor = 0.5;
 
     const { setDragging, setHoveredTile } = useDragStore();
+    const moveStructure = useGameStore((s) => s.moveStructure);
 
+    // load texture
+    useEffect(() => {
+        if (texture === Texture.EMPTY) {
+            Assets.load('/textures/iso-stone-assets.png').then((base) => {
+                const frame = new Rectangle(
+                    (structureId % 10) * STRUCTURE_SIZE,
+                    Math.floor(structureId / 10) * STRUCTURE_SIZE,
+                    STRUCTURE_SIZE,
+                    STRUCTURE_SIZE
+                );
+                setTexture(new Texture({ source: base.source, frame }));
+            });
+        }
+    }, [structureId, texture]);
+
+    // make stage interactive
     useEffect(() => {
         app.stage.eventMode = 'static';
         app.stage.hitArea = app.screen;
     }, [app]);
 
-    useEffect(() => {
-        if (texture === Texture.EMPTY) {
-            Assets.load('/textures/iso-stone-assets.png').then((baseTexture: Texture) => {
-                const frame = new Rectangle(spriteX, spriteY, STRUCTURE_SIZE, STRUCTURE_SIZE);
-                const subTexture = new Texture({ source: baseTexture.source, frame });
-                setTexture(subTexture);
-            });
-        }
-    }, [spriteX, spriteY, texture]);
-
     const onDragMove = useCallback((e: FederatedPointerEvent) => {
         if (!dragging.current) return;
-        const globalX = (e.global.x - offsetRef.current.x) / scaleFactor;
-        const globalY = (e.global.y - offsetRef.current.y) / scaleFactor;
-        setPosition({ x: globalX, y: globalY });
+        // raw global pixel
+        const gx = (e.global.x - offsetRef.current.x) / scaleFactor;
+        const gy = (e.global.y - offsetRef.current.y) / scaleFactor;
+        setPos({ x: gx, y: gy });
 
-        const [gx, gy] = uniso(globalX, globalY + STRUCTURE_Y_OFFSET);
-        setHoveredTile([gx, gy]);
+        // update hovered tile
+        const [tx, ty] = uniso(gx, gy + STRUCTURE_Y_OFFSET);
+        setHoveredTile([tx, ty]);
     }, []);
 
     const onDragStart = useCallback((e: FederatedPointerEvent) => {
         dragging.current = true;
         setDragging(true);
 
-        const scaledX = position.x * scaleFactor;
-        const scaledY = position.y * scaleFactor;
-
+        // compute offset in screen-space
+        const screenX = initialX * scaleFactor;
+        const screenY = initialY * scaleFactor;
         offsetRef.current = {
-            x: e.global.x - scaledX,
-            y: e.global.y - scaledY,
+            x: e.global.x - screenX,
+            y: e.global.y - screenY,
         };
-
         app.stage.on('pointermove', onDragMove);
-    }, [app.stage, onDragMove, position]);
+    }, [initialX, initialY, app.stage, onDragMove, setDragging]);
 
     const onDragEnd = useCallback(() => {
         dragging.current = false;
@@ -86,28 +102,49 @@ const Structure = memo(({ x, y, structureId, scale = 1, onRemove }: StructurePro
         setHoveredTile(null);
         app.stage.off('pointermove', onDragMove);
 
-        const [gx, gy] = uniso(position.x, position.y + STRUCTURE_Y_OFFSET);
-        const snappedX = isoX(gx, gy);
-        const snappedY = isoY(gx, gy) - STRUCTURE_Y_OFFSET;
-        setPosition({ x: snappedX, y: snappedY });
-    }, [app.stage, onDragMove, position]);
+        // figure out drop grid
+        const [nx, ny] = uniso(pos.x, pos.y + STRUCTURE_Y_OFFSET);
+        // try to move in store; if fail, revert
+        const success = moveStructure([tileX, tileY], [nx, ny]);
+        if (success) {
+            // snap to the new tile center
+            setPos({
+                x: isoX(nx, ny),
+                y: isoY(nx, ny) - STRUCTURE_Y_OFFSET,
+            });
+        } else {
+            // revert to original
+            setPos({ x: initialX, y: initialY });
+        }
+    }, [
+        pos.x,
+        pos.y,
+        tileX,
+        tileY,
+        initialX,
+        initialY,
+        onDragMove,
+        moveStructure,
+        setDragging,
+        setHoveredTile,
+        app.stage,
+    ]);
 
     return (
         <pixiSprite
-            x={position.x}
-            y={position.y}
+            x={pos.x}
+            y={pos.y}
             scale={scale}
             zIndex={10}
+            texture={texture}
             eventMode="static"
+            cursor="pointer"
+            anchor={{ x: 0.5, y: 1 }}
             onPointerDown={onDragStart}
             onPointerUp={onDragEnd}
             onPointerUpOutside={onDragEnd}
-            anchor={{ x: 0.5, y: 1 }}
-            texture={texture}
-            cursor="pointer"
         />
     );
 });
-
 Structure.displayName = 'Structure';
 export default Structure;

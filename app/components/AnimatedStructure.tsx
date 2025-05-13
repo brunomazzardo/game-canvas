@@ -36,11 +36,7 @@ const AnimatedStructure = memo(({ x, y, structureIds, scale = 1, onRemove }: Ani
     // Animate scale with gsap on mount
     useEffect(() => {
         if (spriteRef.current) {
-            gsap.fromTo(
-                spriteRef.current,
-                { pixi: { scale: 0.7 } },
-                { pixi: { scale: scale }, duration: 0.6, ease: 'elastic.out(1, 0.3)' }
-            )
+
             spriteRef.current.play()
         }
     }, [textures, scale])
