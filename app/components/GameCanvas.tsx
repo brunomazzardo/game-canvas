@@ -30,23 +30,9 @@ function Map({selectedStructureId, setSelectedStructureId}: {
 
     const initialTiles: number[][] = Array.from({length: isMobile ? 3 : 7}, () => Array(isMobile ? 3 : 7).fill(0))
 
-
     const [structures, setStructures] = useState<(number | undefined)[][]>(
         createEmptyGrid(initialTiles.length, initialTiles[0].length)
     )
-
-    const [houses, setHouses] = useState<(number | undefined)[][]>(
-        createEmptyGrid(initialTiles.length, initialTiles[0].length)
-    )
-
-    useEffect(() => {
-        setHouses(prevHouses => {
-            const newHouses = [...prevHouses];
-            newHouses[0][0] = 1;
-            return newHouses;
-        });
-    }, []);
-
 
     const handleTileClick = useCallback((x: number, y: number) => {
         if (selectedStructureId) {
@@ -75,8 +61,10 @@ function Map({selectedStructureId, setSelectedStructureId}: {
                 row.map((tileId, x) => (
                     <Tile
                         key={`tile-${x}-${y}`}
-                        x={isoX(x, y)}
-                        y={isoY(x, y)}
+                        x={isoX(x, y)}         // pixel position for rendering
+                        y={isoY(x, y)}         // pixel position for rendering
+                        tileX={x}              // grid position for logic
+                        tileY={y}              // grid position for logic
                         tileId={tileId}
                         onClick={() => handleTileClick(x, y)}
                     />
@@ -100,14 +88,7 @@ function Map({selectedStructureId, setSelectedStructureId}: {
             )}
 
 
-            <AnimatedStructure
-                key={`animated-structure`}
-                x={isoX(0, 0)}
-                y={isoY(0, 0)}
-                structureIds={[2, 1, 0]}
-                onRemove={console.log
-                }
-            />
+
         </pixiContainer>
     )
 }
